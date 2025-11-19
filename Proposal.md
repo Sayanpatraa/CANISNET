@@ -114,7 +114,7 @@ We will use pretrained Stable Diffusion models via **HuggingFace Diffusers**.
 
 
 **User-controlled prompts:**
-
+-"A realistic photo of a Shiba Inu puppy playing in the grass."
 
 ---
 
