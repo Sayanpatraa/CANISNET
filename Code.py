@@ -500,7 +500,7 @@ if __name__ == "__main__":
         train_resnet_pipeline()
 
     elif args.mode == "demo":
-        # This will NOT start streamlit automatically – you still run `streamlit run canisnet.py`
+      
         print("Use:  streamlit run canisnet.py  to launch the UI.")
 
     elif args.mode == "infer":
