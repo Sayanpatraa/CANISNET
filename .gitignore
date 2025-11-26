@@ -1,0 +1,40 @@
+# --- Python cache ---
+__pycache__/
+*.pyc
+
+# --- Virtual env ---
+venv/
+.env/
+
+# --- IDE ---
+.idea/
+.vscode/
+
+# --- OS ---
+.DS_Store
+
+# --- Large data you don't want to upload ---
+data/
+dataset/
+train/
+test/
+*.zip
+*.tar
+*.png
+*.jpg
+
+# --- Model outputs ---
+*.ckpt
+*.pt
+*.pth
+*.h5
+*.keras
+
+# --- Checkpoints and logs ---
+checkpoints/
+logs/
+wandb/
+
+# --- HuggingFace caches ---
+huggingface/
+.cache/
