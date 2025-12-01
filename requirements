@@ -1,0 +1,23 @@
+# --- Core ML Framework ---
+torch>=2.1.0
+torchvision==0.17.1
+
+# --- Diffusion / LoRA / SDXL ---
+diffusers>=0.27.0
+transformers>=4.36.0
+accelerate>=0.25.0
+safetensors==0.4.2
+xformers==0.0.25
+sentencepiece==0.1.99
+
+# --- ResNet50 classification / image processing ---
+Pillow==10.2.0
+numpy==1.26.4
+
+# --- Web UI (Streamlit demo) ---
+streamlit==1.32.2
+
+# --- Others (logging / utils) ---
+tqdm==4.66.1
+requests==2.31.0
+huggingface-hub==0.20.3
