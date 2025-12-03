@@ -32,7 +32,7 @@ from tqdm import tqdm   # ★ NEW
 # ==============================
 LABELS_CSV   = "labels.csv"
 TRAIN_DIR    = "train"
-OUTPUT_DIR   = "checkpoints"
+OUTPUT_DIR   = "checkpoints_1"
 
 EPOCHS       = 100
 BATCH_SIZE   = 128
@@ -189,7 +189,7 @@ def main():
     val_size = int(len(full_dataset) * VAL_RATIO)
     train_size = len(full_dataset) - val_size
     train_ds, val_ds = random_split(full_dataset, [train_size, val_size])
-    # val_ds.dataset.transform = val_tf
+    val_ds.dataset.transform = val_tf
 
     print(f"Train: {train_size}, Val: {val_size}")
 
@@ -203,7 +203,13 @@ def main():
     model = build_model(num_classes).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='max',           
+        factor=0.5,           
+        patience=3,                  
+        min_lr=1e-7          
+    )
 
     # Save directory
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -216,7 +222,7 @@ def main():
 
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_loss, val_acc = eval_one_epoch(model, val_loader, criterion, device)
-        scheduler.step()
+        scheduler.step(val_acc)
 
         print(f"Train Loss: {train_loss:.4f}")
         print(f"Val   Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
