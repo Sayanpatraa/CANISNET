@@ -32,16 +32,21 @@ from tqdm import tqdm   # ★ NEW
 # ==============================
 LABELS_CSV   = "labels.csv"
 TRAIN_DIR    = "train"
-OUTPUT_DIR   = "checkpoints"
+OUTPUT_DIR   = "checkpoints_1"
 
-EPOCHS       = 15
-BATCH_SIZE   = 32
-LR           = 1e-4
+EPOCHS       = 100
+BATCH_SIZE   = 128
+LR           = 1e-5
 WEIGHT_DECAY = 1e-4
 VAL_RATIO    = 0.2
 NUM_WORKERS  = 4
 USE_CPU_ONLY = False
 
+EARLY_STOPPING_PATIENCE = 5  
+EARLY_STOPPING_MIN_DELTA = 0.0001  
+
+patience_counter = 0
+best_val_acc = 0.0
 
 # ==============================
 # 1. Dataset
@@ -163,11 +168,12 @@ def main():
     # Transforms
     train_tf = T.Compose([
         T.Resize((256, 256)),
-        T.RandomResizedCrop(224),
+        T.RandomResizedCrop(224, scale=(0.8, 1.0)),
         T.RandomHorizontalFlip(),
+        T.RandomRotation(15),  # NEW
+        T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),  # NEW
         T.ToTensor(),
-        T.Normalize([0.485, 0.456, 0.406],
-                    [0.229, 0.224, 0.225]),
+        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
 
     val_tf = T.Compose([
@@ -197,7 +203,13 @@ def main():
     model = build_model(num_classes).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='max',           
+        factor=0.5,           
+        patience=3,                  
+        min_lr=1e-7          
+    )
 
     # Save directory
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -210,13 +222,15 @@ def main():
 
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_loss, val_acc = eval_one_epoch(model, val_loader, criterion, device)
-        scheduler.step()
+        scheduler.step(val_acc)
 
         print(f"Train Loss: {train_loss:.4f}")
         print(f"Val   Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
-        if val_acc > best_val_acc:
+        # Check for improvement
+        if val_acc > best_val_acc + EARLY_STOPPING_MIN_DELTA:
             best_val_acc = val_acc
+            patience_counter = 0  # Reset counter
             torch.save({
                 "model_state": model.state_dict(),
                 "breed2idx": breed2idx,
@@ -225,10 +239,15 @@ def main():
                 "epoch": epoch,
             }, best_ckpt)
             print(f"🔥 New best model saved to {best_ckpt} (acc={best_val_acc:.4f})")
-
-    print("\nTraining completed!")
-    print(f"Best accuracy: {best_val_acc:.4f}")
-    print(f"Best model saved at: {best_ckpt}")
+        else:
+            patience_counter += 1
+            print(f"⏳ No improvement. Patience: {patience_counter}/{EARLY_STOPPING_PATIENCE}")
+        
+        # Early stopping check
+        if patience_counter >= EARLY_STOPPING_PATIENCE:
+            print(f"\n⛔ Early stopping triggered after {epoch} epochs")
+            print(f"Best validation accuracy: {best_val_acc:.4f}")
+            break
 
 
 # ==============================
