@@ -1,11 +1,3 @@
-"""
-Real-Life SDXL Dog Generator (Hind-Leg Corrected)
-- Pure photoreal mode only
-- SDXL Base + Refiner (correct flow)
-- Optional LoRA for realism
-- Micro-fur + real sensor noise (no cartoon effects)
-- Strong canine anatomy prior (hind-leg alignment, hock, stifle, digitigrade stance)
-"""
 
 import os
 import datetime
