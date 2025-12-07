@@ -26,6 +26,12 @@ DEFAULT_NEG = (
     "mangled paws, deformed legs, extra legs, fused limbs, "
     'incorrect canine joints, human-like legs, malformed hock, malformed stifle'
 )
+SAFE_COMPOSITION_NEG = (
+    "multiple dogs, two dogs, extra dogs, duplicate dogs, duplicate heads, "
+    "stacked faces, overlapping faces, collage, tiled dogs, mirrored dogs, "
+    "extra muzzles, extra eyes, extra limbs, warped anatomy, fused faces"
+)
+NEG = DEFAULT_NEG + ", " + SAFE_COMPOSITION_NEG
 
 PHOTO_PRIOR = (
     "real-life RAW photograph, DSLR full-frame, 35mm or 85mm lens, natural lighting, "
@@ -2240,7 +2246,7 @@ class RealLifeDogSDXL:
             except Exception as e:
                 print(f"[WARN] Could not load LoRA into refiner: {e}")
 
-    def build_prompt(self, breed: str, environment: str) -> str:
+    def build_prompt(self, breed: str) -> str:
         """
         Builds a photoreal + anatomy-aware prompt.
         - Enforces full-body side profile so hind legs are clearly visible
@@ -2257,63 +2263,106 @@ class RealLifeDogSDXL:
         return (
             f"{PHOTO_PRIOR}. "
             f"Real-life {breed} dog, {anatomy_text}. "
-            f"Scene: {environment}. "
             f"{pose_and_camera}. "
             "High realism, natural imperfections, no stylization."
         )
 
     def generate(
-        self,
-        breed: str = "siberian husky",
-        environment: str = "a snowy forest",
-        seed: int = 1234,
-        steps_base: int = 28,
-        steps_refiner: int = 20,
-        scale: float = 5.5,
-        width: int = 1024,
-        height: int = 1024,
+            self,
+            breed: str = "siberian husky",
+            seed: int = None,
+            steps_base: int = 28,
+            steps_refiner: int = 20,
+            scale: float = 5.5,
+            width: int = 1024,
+            height: int = 1024,
     ) -> Image.Image:
+
         width, height = snap(width), snap(height)
-        prompt = self.build_prompt(breed, environment)
+        prompt = self.build_prompt(breed)
         print("[PROMPT]")
         print(prompt)
 
+        # -------- RANDOM SEED --------
+        if seed is None:
+            seed = torch.randint(0, 2 ** 31 - 1, (1,)).item()
+        print(f"[SEED] {seed}")
         g = torch.Generator(self.device).manual_seed(seed)
+
+        # -------- TIMESTEP LOGIC --------
         total_steps = steps_base + steps_refiner
         split = steps_base / float(total_steps)
 
-        # ----------------- BASE (latent up to denoising_end) -----------------
-        base_out = self.base(
+        self.base.scheduler.set_timesteps(total_steps)
+
+        safe_max = len(self.base.scheduler.sigmas) - 1
+        if total_steps > safe_max:
+            print(f"[WARN] Clamping steps {total_steps} → {safe_max}")
+            total_steps = safe_max
+            self.base.scheduler.set_timesteps(total_steps)
+
+        print(f"[DEBUG] Using {len(self.base.scheduler.sigmas)} sigmas, {total_steps} steps.")
+
+        # -------- LONG PROMPT CHUNKING --------
+        enc = self.base.encode_prompt(
             prompt=prompt,
-            negative_prompt=DEFAULT_NEG,
-            height=height,
-            width=width,
-            num_inference_steps=total_steps,
-            guidance_scale=scale,
-            generator=g,
-            denoising_end=split,
-            output_type="latent",
+            device=self.device,
+            num_images_per_prompt=1,
+            do_classifier_free_guidance=True,
+            negative_prompt=NEG,
         )
+
+        # diffusers older: returns 1 value
+        # diffusers new: returns 2 values
+        if isinstance(enc, tuple) and len(enc) == 2:
+            prompt_embeds, negative_embeds = enc
+        else:
+            prompt_embeds = enc
+            negative_embeds = None
+
+        if negative_embeds is None:
+            base_out = self.base(
+                prompt_embeds=prompt_embeds,
+                height=height,
+                width=width,
+                num_inference_steps=total_steps,
+                guidance_scale=scale,
+                generator=g,
+                denoising_end=split,
+                output_type="latent",
+            )
+        else:
+            base_out = self.base(
+                prompt_embeds=prompt_embeds,
+                negative_prompt_embeds=negative_embeds,
+                height=height,
+                width=width,
+                num_inference_steps=total_steps,
+                guidance_scale=scale,
+                generator=g,
+                denoising_end=split,
+                output_type="latent",
+            )
+
         latents = base_out.images
 
-        # ----------------- REFINER (from denoising_start) --------------------
         refined = self.refiner(
             prompt=prompt,
-            negative_prompt=DEFAULT_NEG,
+            negative_prompt=NEG,
             image=latents,
             num_inference_steps=total_steps,
             guidance_scale=scale,
             generator=g,
             denoising_start=split,
         )
+
         img = refined.images[0]
 
-        # Photographic realism passes
         img = tone(img)
         img = microfur(img)
         img = real_sensor_noise(img)
-        return img
 
+        return img
 
 
 def main():
@@ -2321,7 +2370,6 @@ def main():
 
     parser = argparse.ArgumentParser(description="Real-Life SDXL Dog Generator (Hind-Leg Corrected)")
     parser.add_argument("--breed", default="siberian husky", help="Dog breed (string)")
-    parser.add_argument("--env", default="a forest in soft daylight", help="Textual environment description")
     parser.add_argument("--lora", default=None, help="Optional LoRA path for extra realism")
     parser.add_argument("--out", default="./output", help="Output directory")
     parser.add_argument("--seed", type=int, default=1234, help="Random seed")
@@ -2332,7 +2380,6 @@ def main():
     gen = RealLifeDogSDXL(lora_path=args.lora)
     img = gen.generate(
         breed=args.breed,
-        environment=args.env,
         seed=args.seed,
     )
 

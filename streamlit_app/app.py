@@ -1,5 +1,9 @@
 """
 Dog Breed Classifier & Generator - Streamlit App
+
+Two tabs:
+1. Classify - Upload an image to identify dog breed
+2. Generate - Create dog images in various styles (realistic or stylized)
 """
 
 import streamlit as st
@@ -9,7 +13,7 @@ import io
 
 from classifier import DogClassifier
 from generator import DogGenerator
-from realistic_generator import RealLifeDogSDXL
+from realistic_generator import RealLifeDogSDXL, NEG, tone, microfur, real_sensor_noise, snap
 from config import (
     DOG_BREEDS,
     LORA_STYLES,
@@ -21,44 +25,31 @@ from config import (
 )
 
 
-# Page config
+# ============ Page Configuration ============
 st.set_page_config(
     page_title="Dog Breed AI",
     page_icon="🐕",
     layout="wide",
 )
 
-# Custom CSS for clean UI
+# Clean CSS
 st.markdown("""
 <style>
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        padding: 10px 24px;
-        font-size: 18px;
-    }
+    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
+    .stTabs [data-baseweb="tab"] { height: 50px; padding: 10px 24px; font-size: 18px; }
     .result-box {
         padding: 20px;
         border-radius: 10px;
         background-color: #f0f2f6;
         margin: 10px 0;
     }
-    .breed-name {
-        font-size: 28px;
-        font-weight: bold;
-        color: #1f77b4;
-    }
-    .confidence {
-        font-size: 18px;
-        color: #666;
-    }
+    .breed-name { font-size: 28px; font-weight: bold; color: #1f77b4; }
+    .confidence { font-size: 18px; color: #666; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ============ Initialize Session State ============
+# ============ Session State ============
 if "classification_results" not in st.session_state:
     st.session_state.classification_results = None
 if "classified_breed" not in st.session_state:
@@ -67,8 +58,7 @@ if "use_classified_breed" not in st.session_state:
     st.session_state.use_classified_breed = False
 
 
-# ============ Model Loading (Cached) ============
-
+# ============ Cached Model Loaders ============
 @st.cache_resource
 def load_classifier():
     """Load classifier model (cached)."""
@@ -78,85 +68,165 @@ def load_classifier():
 
 @st.cache_resource
 def load_stylized_generator():
-    """Load stylized generator for LoRA-based styles (cached)."""
+    """Load stylized LoRA generator (cached)."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     return DogGenerator(device=device)
 
 
 @st.cache_resource
 def load_realistic_generator():
-    """Load realistic generator with refiner (cached)."""
+    """Load realistic base+refiner generator (cached)."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     return RealLifeDogSDXL(device=device)
 
 
+# ============ Helper Functions ============
 def is_realistic_style(style_name: str) -> bool:
-    """Check if the selected style uses the realistic pipeline."""
-    style_config = LORA_STYLES.get(style_name, {})
-    return style_config.get("use_realistic_pipeline", False)
+    """Check if style uses the realistic pipeline."""
+    return LORA_STYLES.get(style_name, {}).get("use_realistic_pipeline", False)
+
+
+def generate_realistic(
+    generator: RealLifeDogSDXL,
+    breed: str,
+    seed: int,
+    steps_base: int,
+    steps_refiner: int,
+    scale: float,
+    width: int,
+    height: int,
+) -> Image.Image:
+    """
+    Generate realistic dog image.
+    Uses a condensed prompt to stay within 77 token limit.
+    """
+    width, height = snap(width), snap(height)
+    
+    # Condensed prompt (~70 tokens) - keeps essential elements
+    prompt = (
+        f"RAW photo of a {breed} dog, full body side view, "
+        "DSLR, 85mm lens, natural lighting, "
+        "correct canine anatomy, four legs visible, proper joint angles, "
+        "photorealistic, high detail, no stylization"
+    )
+    
+    print(f"[PROMPT] {prompt}")
+    print(f"[PROMPT LENGTH] ~{len(prompt.split())} words")
+    
+    # Handle seed
+    if seed is None:
+        seed = torch.randint(0, 2**31 - 1, (1,)).item()
+    print(f"[SEED] {seed}")
+    
+    g = torch.Generator(generator.device).manual_seed(seed)
+    
+    # Calculate total steps and split ratio
+    total_steps = steps_base + steps_refiner
+    split = steps_base / total_steps  # e.g., 28/(28+20) = 0.583
+    
+    print(f"[INFO] Total steps: {total_steps}, Split: {split:.3f}")
+    print(f"[INFO] Base will do ~{int(total_steps * split)} steps, Refiner will do ~{int(total_steps * (1-split))} steps")
+    
+    # Base pass - use prompt string directly
+    print("[INFO] Running base model...")
+    base_out = generator.base(
+        prompt=prompt,
+        negative_prompt=NEG,
+        height=height,
+        width=width,
+        num_inference_steps=total_steps,
+        guidance_scale=scale,
+        generator=g,
+        denoising_end=split,
+        output_type="latent",
+    )
+    
+    latents = base_out.images
+    
+    # Refiner pass - must use same total_steps
+    print("[INFO] Running refiner...")
+    g_refiner = torch.Generator(generator.device).manual_seed(seed)
+    
+    refined = generator.refiner(
+        prompt=prompt,
+        negative_prompt=NEG,
+        image=latents,
+        num_inference_steps=total_steps,
+        guidance_scale=scale,
+        generator=g_refiner,
+        denoising_start=split,
+    )
+    
+    img = refined.images[0]
+    
+    # Post-processing for realism
+    print("[INFO] Applying realism filters...")
+    img = tone(img)
+    img = microfur(img)
+    img = real_sensor_noise(img)
+    
+    print("[INFO] Generation complete!")
+    return img
 
 
 # ============ Main App ============
-
 def main():
     st.title("🐕 Dog Breed AI")
     st.markdown("Classify dog breeds and generate stylized dog artwork")
-
-    # Device info in sidebar
+    
+    # Sidebar - device info
     device = "cuda" if torch.cuda.is_available() else "cpu"
     st.sidebar.markdown(f"**Device:** `{device}`")
     if device == "cuda":
         st.sidebar.markdown(f"**GPU:** `{torch.cuda.get_device_name(0)}`")
-
-    # Show classified breed info in sidebar if available
+    
+    # Sidebar - show last classified breed
     if st.session_state.classified_breed:
         st.sidebar.markdown("---")
         st.sidebar.markdown("**Last Classified:**")
-        st.sidebar.markdown(f"🐕 {st.session_state.classified_breed.replace('_', ' ').title()}")
+        breed_display = st.session_state.classified_breed.replace('_', ' ').title()
+        st.sidebar.markdown(f"🐕 {breed_display}")
         if st.sidebar.button("Use in Generator →"):
             st.session_state.use_classified_breed = True
             st.rerun()
-
-    # Tabs
+    
+    # Main tabs
     tab_classify, tab_generate = st.tabs(["🔍 Classify", "🎨 Generate"])
-
-    # ============ CLASSIFY TAB ============
+    
+    # ==================== CLASSIFY TAB ====================
     with tab_classify:
         st.header("Dog Breed Classification")
         st.markdown("Upload an image of a dog to identify its breed.")
-
-        col1, col2 = st.columns([1, 1])
-
+        
+        col1, col2 = st.columns(2)
+        
         with col1:
             uploaded_file = st.file_uploader(
                 "Choose an image",
                 type=["jpg", "jpeg", "png", "webp"],
                 key="classifier_upload",
             )
-
-            if uploaded_file is not None:
+            
+            if uploaded_file:
                 image = Image.open(uploaded_file).convert("RGB")
                 st.image(image, caption="Uploaded Image", use_container_width=True)
-
+                
                 if st.button("🔍 Classify Breed", type="primary", use_container_width=True):
-                    with st.spinner("Loading model..."):
+                    with st.spinner("Loading classifier..."):
                         classifier = load_classifier()
-
-                    with st.spinner("Analyzing image..."):
+                    
+                    with st.spinner("Analyzing..."):
                         results = classifier.predict_top_k(image, k=5)
-
-                    # Store results in session state
+                    
                     st.session_state.classification_results = results
                     st.session_state.classified_breed = results[0][0]
-
+        
         with col2:
-            # Display results from session state (persists across reruns)
-            if st.session_state.classification_results is not None:
+            if st.session_state.classification_results:
                 results = st.session_state.classification_results
-
+                
                 st.markdown("### Results")
-
-                # Top prediction
+                
                 top_breed, top_conf = results[0]
                 st.markdown(f"""
                 <div class="result-box">
@@ -164,82 +234,54 @@ def main():
                     <div class="confidence">Confidence: {top_conf:.1%}</div>
                 </div>
                 """, unsafe_allow_html=True)
-
-                # Other predictions
+                
                 if len(results) > 1:
                     st.markdown("**Other possibilities:**")
                     for breed, conf in results[1:]:
                         st.markdown(f"- {breed.replace('_', ' ').title()}: {conf:.1%}")
-
-                # Quick action - this now persists!
+                
                 st.markdown("---")
-                st.info("💡 To generate art of this breed, click **'Use in Generator →'** in the sidebar, then switch to the **Generate** tab.")
-
+                st.info("💡 Click **'Use in Generator →'** in the sidebar to generate art of this breed.")
             else:
-                # Placeholder
                 st.markdown("""
-                <div style="
-                    border: 2px dashed #ccc;
-                    border-radius: 10px;
-                    padding: 100px 20px;
-                    text-align: center;
-                    color: #888;
-                ">
+                <div style="border: 2px dashed #ccc; border-radius: 10px; padding: 80px 20px; text-align: center; color: #888;">
                     <p style="font-size: 48px; margin: 0;">📊</p>
-                    <p>Classification results will appear here</p>
+                    <p>Results will appear here</p>
                 </div>
                 """, unsafe_allow_html=True)
-
-    # ============ GENERATE TAB ============
+    
+    # ==================== GENERATE TAB ====================
     with tab_generate:
         st.header("Dog Image Generator")
         st.markdown("Generate stylized artwork of any dog breed.")
-
-        col1, col2 = st.columns([1, 1])
-
+        
+        col1, col2 = st.columns(2)
+        
         with col1:
             # Breed selection
             st.subheader("Breed")
-
-            # Check if user clicked "Use in Generator" from sidebar
+            
+            # Check if coming from classifier
             if st.session_state.use_classified_breed and st.session_state.classified_breed:
                 breed_from_classifier = st.session_state.classified_breed
-                st.success(f"✓ Using classified breed: **{breed_from_classifier.replace('_', ' ').title()}**")
-                # Reset flag
+                st.success(f"✓ Using: **{breed_from_classifier.replace('_', ' ').title()}**")
                 st.session_state.use_classified_breed = False
             else:
                 breed_from_classifier = None
-
-            breed_option = st.radio(
-                "Select breed method",
-                ["Choose from list", "Custom input"],
-                horizontal=True,
-            )
-
-            if breed_option == "Choose from list":
-                # Try to find classified breed in list
+            
+            breed_method = st.radio("Select breed", ["From list", "Custom"], horizontal=True)
+            
+            if breed_method == "From list":
                 default_idx = 0
                 if breed_from_classifier:
                     formatted = breed_from_classifier.replace('_', ' ').title()
                     if formatted in DOG_BREEDS:
                         default_idx = DOG_BREEDS.index(formatted)
-
-                selected_breed = st.selectbox(
-                    "Dog breed",
-                    DOG_BREEDS,
-                    index=default_idx,
-                )
+                selected_breed = st.selectbox("Dog breed", DOG_BREEDS, index=default_idx)
             else:
-                default_val = ""
-                if breed_from_classifier:
-                    default_val = breed_from_classifier.replace('_', ' ').title()
-
-                selected_breed = st.text_input(
-                    "Enter breed name",
-                    value=default_val,
-                    placeholder="e.g., Golden Retriever",
-                )
-
+                default_val = breed_from_classifier.replace('_', ' ').title() if breed_from_classifier else ""
+                selected_breed = st.text_input("Enter breed", value=default_val, placeholder="e.g., Golden Retriever")
+            
             # Style selection
             st.subheader("Style")
             style_options = list(LORA_STYLES.keys())
@@ -249,55 +291,45 @@ def main():
                 index=style_options.index(DEFAULT_LORA_STYLE),
             )
             st.caption(LORA_STYLES[selected_style]["description"])
-
-            # Check if realistic style
+            
             use_realistic = is_realistic_style(selected_style)
-
-            # Advanced settings - different options for realistic vs stylized
-            with st.expander("⚙️ Advanced Settings"):
+            
+            # Advanced settings - define defaults first
+            if use_realistic:
+                default_height = 1024
+                default_width = 1024
+            else:
+                default_height = DEFAULT_HEIGHT
+                default_width = DEFAULT_WIDTH
+            
+            # Advanced settings
+            with st.expander("⚙️ Advanced Settings", expanded=True):
                 if use_realistic:
-                    # Realistic generator settings
                     st.markdown("**Realistic Generation Settings**")
-                    
-                    environment = st.text_input(
-                        "Environment/Scene",
-                        value="a park with soft natural lighting",
-                        placeholder="e.g., a snowy forest, a sunny beach",
-                    )
-                    
                     col_a, col_b = st.columns(2)
                     with col_a:
-                        height = st.number_input("Height", value=1024, step=64, min_value=512, max_value=1024)
-                        steps_base = st.slider("Base Steps", min_value=15, max_value=50, value=28)
+                        height = st.number_input("Height", value=default_height, step=64, min_value=512, max_value=1024, key="real_height")
+                        steps_base = st.slider("Base Steps", 15, 50, 28, key="steps_base")
                     with col_b:
-                        width = st.number_input("Width", value=1024, step=64, min_value=512, max_value=1280)
-                        steps_refiner = st.slider("Refiner Steps", min_value=10, max_value=40, value=20)
-                    
-                    guidance = st.slider("Guidance Scale", min_value=1.0, max_value=10.0, value=5.5, step=0.5)
-                    
-                    use_seed = st.checkbox("Use fixed seed")
-                    seed = 1234  # default
-                    if use_seed:
-                        seed = st.number_input("Seed", value=1234, min_value=0, max_value=2**32-1)
+                        width = st.number_input("Width", value=default_width, step=64, min_value=512, max_value=1280, key="real_width")
+                        steps_refiner = st.slider("Refiner Steps", 10, 40, 20, key="steps_refiner")
+                    guidance = st.slider("Guidance Scale", 1.0, 10.0, 5.5, 0.5, key="real_guidance")
+                    steps = None  # Not used for realistic
                 else:
-                    # Stylized generator settings
-                    environment = None
-                    steps_base = None
-                    steps_refiner = None
-                    
+                    st.markdown("**Stylized Generation Settings**")
                     col_a, col_b = st.columns(2)
                     with col_a:
-                        height = st.number_input("Height", value=DEFAULT_HEIGHT, step=64, min_value=512, max_value=1024)
-                        steps = st.slider("Inference Steps", min_value=20, max_value=100, value=DEFAULT_STEPS)
+                        height = st.number_input("Height", value=default_height, step=64, min_value=512, max_value=1024, key="style_height")
+                        steps = st.slider("Inference Steps", 20, 100, DEFAULT_STEPS, key="style_steps")
                     with col_b:
-                        width = st.number_input("Width", value=DEFAULT_WIDTH, step=64, min_value=512, max_value=1280)
-                        guidance = st.slider("Guidance Scale", min_value=1.0, max_value=15.0, value=DEFAULT_GUIDANCE, step=0.5)
-
-                    use_seed = st.checkbox("Use fixed seed")
-                    seed = None
-                    if use_seed:
-                        seed = st.number_input("Seed", value=42, min_value=0, max_value=2**32-1)
-
+                        width = st.number_input("Width", value=default_width, step=64, min_value=512, max_value=1280, key="style_width")
+                        guidance = st.slider("Guidance Scale", 1.0, 15.0, DEFAULT_GUIDANCE, 0.5, key="style_guidance")
+                    steps_base = 28  # Default values for realistic (not used but defined)
+                    steps_refiner = 20
+                
+                use_seed = st.checkbox("Use fixed seed", key="use_seed")
+                seed = st.number_input("Seed", value=1234, min_value=0, key="seed_val") if use_seed else None
+            
             # Generate button
             generate_btn = st.button(
                 "🎨 Generate Image",
@@ -305,27 +337,33 @@ def main():
                 use_container_width=True,
                 disabled=not selected_breed,
             )
-
+        
         with col2:
             if generate_btn and selected_breed:
-                # Generate
-                progress_text = st.empty()
-                progress_text.markdown(f"**Generating {selected_breed} in {selected_style} style...**")
-
-                with st.spinner("Loading model (this may take a minute on first run)..."):
-                    if use_realistic:
-                        generator = load_realistic_generator()
-                    else:
-                        generator = load_stylized_generator()
-
-                with st.spinner("Generating..."):
-                    try:
+                progress = st.empty()
+                
+                if use_realistic:
+                    progress.markdown(f"**Generating {selected_breed} in {selected_style} style...**\n\n"
+                                     f"Base steps: {steps_base}, Refiner steps: {steps_refiner}, "
+                                     f"Size: {width}x{height}")
+                else:
+                    progress.markdown(f"**Generating {selected_breed} in {selected_style} style...**\n\n"
+                                     f"Steps: {steps}, Size: {width}x{height}")
+                
+                try:
+                    with st.spinner("Loading model..."):
                         if use_realistic:
-                            # Use realistic generator
-                            generated_image = generator.generate(
+                            generator = load_realistic_generator()
+                        else:
+                            generator = load_stylized_generator()
+                    
+                    with st.spinner("Generating image..."):
+                        if use_realistic:
+                            print(f"[APP] Calling generate_realistic with steps_base={steps_base}, steps_refiner={steps_refiner}")
+                            image = generate_realistic(
+                                generator=generator,
                                 breed=selected_breed,
-                                environment=environment,
-                                seed=seed if use_seed else 1234,
+                                seed=seed,
                                 steps_base=steps_base,
                                 steps_refiner=steps_refiner,
                                 scale=guidance,
@@ -333,8 +371,7 @@ def main():
                                 height=height,
                             )
                         else:
-                            # Use stylized generator
-                            generated_image = generator.generate(
+                            image = generator.generate(
                                 breed=selected_breed,
                                 style_name=selected_style,
                                 height=height,
@@ -343,39 +380,25 @@ def main():
                                 guidance_scale=guidance,
                                 seed=seed,
                             )
-
-                        progress_text.empty()
-                        st.image(generated_image, caption=f"{selected_breed} - {selected_style}", use_container_width=True)
-
-                        # Download button
-                        buf = io.BytesIO()
-                        generated_image.save(buf, format="PNG")
-                        st.download_button(
-                            label="💾 Download Image",
-                            data=buf.getvalue(),
-                            file_name=f"{selected_breed.lower().replace(' ', '_')}_{selected_style.lower().replace(' ', '_')}.png",
-                            mime="image/png",
-                        )
-
-                    except Exception as e:
-                        progress_text.empty()
-                        st.error(f"Generation failed: {str(e)}")
-                        import traceback
-                        st.code(traceback.format_exc())
-
-            elif not selected_breed and generate_btn:
-                st.warning("Please enter a breed name.")
-
-            else:
-                # Placeholder when no generation yet
+                    
+                    progress.empty()
+                    st.image(image, caption=f"{selected_breed} - {selected_style}", use_container_width=True)
+                    
+                    # Download button
+                    buf = io.BytesIO()
+                    image.save(buf, format="PNG")
+                    filename = f"{selected_breed.lower().replace(' ', '_')}_{selected_style.lower().replace(' ', '_').replace('(', '').replace(')', '')}.png"
+                    st.download_button("💾 Download", buf.getvalue(), filename, "image/png")
+                
+                except Exception as e:
+                    progress.empty()
+                    st.error(f"Generation failed: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+            
+            elif not generate_btn:
                 st.markdown("""
-                <div style="
-                    border: 2px dashed #ccc;
-                    border-radius: 10px;
-                    padding: 100px 20px;
-                    text-align: center;
-                    color: #888;
-                ">
+                <div style="border: 2px dashed #ccc; border-radius: 10px; padding: 80px 20px; text-align: center; color: #888;">
                     <p style="font-size: 48px; margin: 0;">🖼️</p>
                     <p>Generated image will appear here</p>
                 </div>
