@@ -9,6 +9,7 @@ import io
 
 from classifier import DogClassifier
 from generator import DogGenerator
+from realistic_generator import RealLifeDogSDXL
 from config import (
     DOG_BREEDS,
     LORA_STYLES,
@@ -80,7 +81,10 @@ def load_generator():
     """Load generator (cached). Base model loaded on first generation."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     return DogGenerator(device=device)
-
+@st.cache_resource
+def load_realistic_generator():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return RealLifeDogSDXL(device=device)
 
 # ============ Main App ============
 
