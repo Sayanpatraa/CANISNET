@@ -12,6 +12,13 @@ GENERATOR_BASE_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
 
 # Available LoRA styles for generation
 LORA_STYLES = {
+    "Realistic": {
+        "repo": None,  # Uses separate RealLifeDogSDXL pipeline
+        "weight_name": None,
+        "scale": None,
+        "description": "Photorealistic dog images with accurate breed anatomy",
+        "use_realistic_pipeline": True,
+    },
     "Manga (LineAni)": {
         "repo": "artificialguybr/LineAniRedmond-LinearMangaSDXL-V2",
         "weight_name": None,
@@ -39,10 +46,11 @@ LORA_STYLES = {
 }
 
 # Default LoRA style
-DEFAULT_LORA_STYLE = "Manga (LineAni)"
+DEFAULT_LORA_STYLE = "Realistic"
 
 # Prompt templates per style
 PROMPT_TEMPLATES = {
+    "Realistic": None,  # Uses RealLifeDogSDXL's own prompt builder
     "Manga (LineAni)": (
         "Black and white side view of a {breed} dog, accurate canine anatomy, "
         "single visible tail, one tail only, proper proportions, full body in frame, "
@@ -78,6 +86,7 @@ DEFAULT_NEGATIVE_PROMPT = (
 
 # Style-specific negative prompts
 NEGATIVE_PROMPTS = {
+    "Realistic": None,  # Uses RealLifeDogSDXL's own negative prompt
     "Manga (LineAni)": (
         "extra tail, duplicate tail, second tail, tail duplication, tail artifact, "
         "blurry, low quality, distorted, extra limbs, extra legs, extra tails, "

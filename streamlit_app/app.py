@@ -77,14 +77,24 @@ def load_classifier():
 
 
 @st.cache_resource
-def load_generator():
-    """Load generator (cached). Base model loaded on first generation."""
+def load_stylized_generator():
+    """Load stylized generator for LoRA-based styles (cached)."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     return DogGenerator(device=device)
+
+
 @st.cache_resource
 def load_realistic_generator():
+    """Load realistic generator with refiner (cached)."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     return RealLifeDogSDXL(device=device)
+
+
+def is_realistic_style(style_name: str) -> bool:
+    """Check if the selected style uses the realistic pipeline."""
+    style_config = LORA_STYLES.get(style_name, {})
+    return style_config.get("use_realistic_pipeline", False)
+
 
 # ============ Main App ============
 
@@ -240,20 +250,53 @@ def main():
             )
             st.caption(LORA_STYLES[selected_style]["description"])
 
-            # Advanced settings
-            with st.expander("⚙️ Advanced Settings"):
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    height = st.number_input("Height", value=DEFAULT_HEIGHT, step=64, min_value=512, max_value=1024)
-                    steps = st.slider("Inference Steps", min_value=20, max_value=100, value=DEFAULT_STEPS)
-                with col_b:
-                    width = st.number_input("Width", value=DEFAULT_WIDTH, step=64, min_value=512, max_value=1280)
-                    guidance = st.slider("Guidance Scale", min_value=1.0, max_value=15.0, value=DEFAULT_GUIDANCE, step=0.5)
+            # Check if realistic style
+            use_realistic = is_realistic_style(selected_style)
 
-                use_seed = st.checkbox("Use fixed seed")
-                seed = None
-                if use_seed:
-                    seed = st.number_input("Seed", value=42, min_value=0, max_value=2**32-1)
+            # Advanced settings - different options for realistic vs stylized
+            with st.expander("⚙️ Advanced Settings"):
+                if use_realistic:
+                    # Realistic generator settings
+                    st.markdown("**Realistic Generation Settings**")
+                    
+                    environment = st.text_input(
+                        "Environment/Scene",
+                        value="a park with soft natural lighting",
+                        placeholder="e.g., a snowy forest, a sunny beach",
+                    )
+                    
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        height = st.number_input("Height", value=1024, step=64, min_value=512, max_value=1024)
+                        steps_base = st.slider("Base Steps", min_value=15, max_value=50, value=28)
+                    with col_b:
+                        width = st.number_input("Width", value=1024, step=64, min_value=512, max_value=1280)
+                        steps_refiner = st.slider("Refiner Steps", min_value=10, max_value=40, value=20)
+                    
+                    guidance = st.slider("Guidance Scale", min_value=1.0, max_value=10.0, value=5.5, step=0.5)
+                    
+                    use_seed = st.checkbox("Use fixed seed")
+                    seed = 1234  # default
+                    if use_seed:
+                        seed = st.number_input("Seed", value=1234, min_value=0, max_value=2**32-1)
+                else:
+                    # Stylized generator settings
+                    environment = None
+                    steps_base = None
+                    steps_refiner = None
+                    
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        height = st.number_input("Height", value=DEFAULT_HEIGHT, step=64, min_value=512, max_value=1024)
+                        steps = st.slider("Inference Steps", min_value=20, max_value=100, value=DEFAULT_STEPS)
+                    with col_b:
+                        width = st.number_input("Width", value=DEFAULT_WIDTH, step=64, min_value=512, max_value=1280)
+                        guidance = st.slider("Guidance Scale", min_value=1.0, max_value=15.0, value=DEFAULT_GUIDANCE, step=0.5)
+
+                    use_seed = st.checkbox("Use fixed seed")
+                    seed = None
+                    if use_seed:
+                        seed = st.number_input("Seed", value=42, min_value=0, max_value=2**32-1)
 
             # Generate button
             generate_btn = st.button(
@@ -265,25 +308,41 @@ def main():
 
         with col2:
             if generate_btn and selected_breed:
-                # Load generator
-                with st.spinner("Loading model (this may take a minute on first run)..."):
-                    generator = load_generator()
-
                 # Generate
                 progress_text = st.empty()
                 progress_text.markdown(f"**Generating {selected_breed} in {selected_style} style...**")
 
+                with st.spinner("Loading model (this may take a minute on first run)..."):
+                    if use_realistic:
+                        generator = load_realistic_generator()
+                    else:
+                        generator = load_stylized_generator()
+
                 with st.spinner("Generating..."):
                     try:
-                        generated_image = generator.generate(
-                            breed=selected_breed,
-                            style_name=selected_style,
-                            height=height,
-                            width=width,
-                            num_inference_steps=steps,
-                            guidance_scale=guidance,
-                            seed=seed,
-                        )
+                        if use_realistic:
+                            # Use realistic generator
+                            generated_image = generator.generate(
+                                breed=selected_breed,
+                                environment=environment,
+                                seed=seed if use_seed else 1234,
+                                steps_base=steps_base,
+                                steps_refiner=steps_refiner,
+                                scale=guidance,
+                                width=width,
+                                height=height,
+                            )
+                        else:
+                            # Use stylized generator
+                            generated_image = generator.generate(
+                                breed=selected_breed,
+                                style_name=selected_style,
+                                height=height,
+                                width=width,
+                                num_inference_steps=steps,
+                                guidance_scale=guidance,
+                                seed=seed,
+                            )
 
                         progress_text.empty()
                         st.image(generated_image, caption=f"{selected_breed} - {selected_style}", use_container_width=True)
@@ -301,6 +360,8 @@ def main():
                     except Exception as e:
                         progress_text.empty()
                         st.error(f"Generation failed: {str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc())
 
             elif not selected_breed and generate_btn:
                 st.warning("Please enter a breed name.")
