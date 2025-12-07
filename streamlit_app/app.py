@@ -98,17 +98,20 @@ def generate_realistic(
 ) -> Image.Image:
     """
     Generate realistic dog image.
-    Uses prompt strings directly to avoid encode_prompt compatibility issues.
-    
-    The base+refiner ensemble works by:
-    - Both use the SAME total_steps
-    - denoising_end/start controls which portion each handles
-    - Example: total=48, split=0.58 -> base does ~28 steps, refiner does ~20 steps
+    Uses a condensed prompt to stay within 77 token limit.
     """
     width, height = snap(width), snap(height)
-    prompt = generator.build_prompt(breed)
     
-    print(f"[PROMPT] {prompt[:100]}...")
+    # Condensed prompt (~70 tokens) - keeps essential elements
+    prompt = (
+        f"RAW photo of a {breed} dog, full body side view, "
+        "DSLR, 85mm lens, natural lighting, "
+        "correct canine anatomy, four legs visible, proper joint angles, "
+        "photorealistic, high detail, no stylization"
+    )
+    
+    print(f"[PROMPT] {prompt}")
+    print(f"[PROMPT LENGTH] ~{len(prompt.split())} words")
     
     # Handle seed
     if seed is None:
