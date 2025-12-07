@@ -324,7 +324,6 @@ def main():
                             # Use realistic generator
                             generated_image = generator.generate(
                                 breed=selected_breed,
-                                environment=environment,
                                 seed=seed if use_seed else 1234,
                                 steps_base=steps_base,
                                 steps_refiner=steps_refiner,
