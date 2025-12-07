@@ -26,9 +26,6 @@ except ImportError:
     cv2 = None
 
 
-# ------------------------------------------------------------
-# GLOBAL REALISM + ANATOMY SETTINGS
-# ------------------------------------------------------------
 
 # Negative prompt explicitly punishes bad legs/paws
 DEFAULT_NEG = (
@@ -76,9 +73,6 @@ def snap(v: int) -> int:
     return (v // 8) * 8
 
 
-# ------------------------------------------------------------
-# SUPER REALISTIC POST PROCESSING
-# ------------------------------------------------------------
 
 def microfur(img: Image.Image) -> Image.Image:
     """
@@ -130,9 +124,6 @@ def tone(img: Image.Image) -> Image.Image:
     return to_img(arr)
 
 
-# ------------------------------------------------------------
-# BREED-SPECIFIC ANATOMY (HIND-LEG FOCUSED)
-# ------------------------------------------------------------
 
 BREED_ANATOMY: Dict[str, Dict[str, str]] = {
     "labrador retriever": {
@@ -2213,9 +2204,6 @@ def anatomy(breed: str) -> str:
     return ", ".join(parts)
 
 
-# ------------------------------------------------------------
-# MAIN GENERATOR (REAL-LIFE ONLY)
-# ------------------------------------------------------------
 
 class RealLifeDogSDXL:
     def __init__(
@@ -2335,9 +2323,6 @@ class RealLifeDogSDXL:
         return img
 
 
-# ------------------------------------------------------------
-# CLI
-# ------------------------------------------------------------
 
 def main():
     import argparse
