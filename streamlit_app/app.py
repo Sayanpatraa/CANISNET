@@ -121,11 +121,10 @@ def generate_realistic_image(
     
     g = torch.Generator(generator.device).manual_seed(seed)
 
-    # Timestep logic
-    total_steps = steps_base + steps_refiner
-    split = steps_base / float(total_steps)
+    # For base+refiner with denoising_end/start, use high_noise_frac approach
+    high_noise_frac = 0.8  # Base handles 80% of denoising, refiner handles 20%
 
-    print(f"[DEBUG] total_steps={total_steps}, split={split}")
+    print(f"[DEBUG] steps_base={steps_base}, steps_refiner={steps_refiner}, high_noise_frac={high_noise_frac}")
 
     # -------- BASE PASS (using prompt string directly) --------
     base_out = generator.base(
@@ -133,24 +132,27 @@ def generate_realistic_image(
         negative_prompt=NEG,
         height=height,
         width=width,
-        num_inference_steps=total_steps,
+        num_inference_steps=steps_base,
         guidance_scale=scale,
         generator=g,
-        denoising_end=split,
+        denoising_end=high_noise_frac,
         output_type="latent",
     )
 
     latents = base_out.images
 
     # -------- REFINER PASS --------
+    # Need new generator with same seed for refiner
+    g_refiner = torch.Generator(generator.device).manual_seed(seed)
+    
     refined = generator.refiner(
         prompt=prompt,
         negative_prompt=NEG,
         image=latents,
-        num_inference_steps=total_steps,
+        num_inference_steps=steps_refiner,
         guidance_scale=scale,
-        generator=g,
-        denoising_start=split,
+        generator=g_refiner,
+        denoising_start=high_noise_frac,
     )
 
     img = refined.images[0]
