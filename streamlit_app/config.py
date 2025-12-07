@@ -2,18 +2,25 @@
 Configuration for Dog Breed Classifier and Generator Streamlit App
 """
 
-# Classifier settings
+# ============================================================
+# CLASSIFIER SETTINGS
+# ============================================================
 CLASSIFIER_HF_REPO = "djhua0103/dog-breed-resnet50"
 CLASSIFIER_WEIGHT_FILE = "resnet50_dog_best.pth"
 CLASSIFIER_LABEL_FILE = "id2breed.json"
 
-# Generator base model
+# ============================================================
+# GENERATOR SETTINGS
+# ============================================================
 GENERATOR_BASE_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
+GENERATOR_REFINER_MODEL = "stabilityai/stable-diffusion-xl-refiner-1.0"
 
-# Available LoRA styles for generation
+# ============================================================
+# STYLE CONFIGURATIONS
+# ============================================================
 LORA_STYLES = {
     "Realistic": {
-        "repo": None,  # Uses separate RealLifeDogSDXL pipeline
+        "repo": None,
         "weight_name": None,
         "scale": None,
         "description": "Photorealistic dog images with accurate breed anatomy",
@@ -23,34 +30,35 @@ LORA_STYLES = {
         "repo": "artificialguybr/LineAniRedmond-LinearMangaSDXL-V2",
         "weight_name": None,
         "scale": 0.9,
-        "description": "Black and white manga style with speed lines"
+        "description": "Black and white manga style with speed lines",
     },
     "Anime": {
         "repo": "ntc-ai/SDXL-LoRA-slider.anime",
         "weight_name": "anime.safetensors",
         "scale": 1.5,
-        "description": "Anime style slider effect"
+        "description": "Anime style slider effect",
     },
     "Pastel Anime": {
         "repo": "Linaqruf/pastel-anime-xl-lora",
         "weight_name": "pastel-anime-xl.safetensors",
         "scale": 0.8,
-        "description": "Soft pastel anime illustration style"
+        "description": "Soft pastel anime illustration style",
     },
     "Pixel Art": {
         "repo": "nerijs/pixel-art-xl",
         "weight_name": None,
         "scale": 0.9,
-        "description": "Retro pixel art style"
+        "description": "Retro pixel art style",
     },
 }
 
-# Default LoRA style
 DEFAULT_LORA_STYLE = "Realistic"
 
-# Prompt templates per style
+# ============================================================
+# PROMPT TEMPLATES (for stylized generation)
+# ============================================================
 PROMPT_TEMPLATES = {
-    "Realistic": None,  # Uses RealLifeDogSDXL's own prompt builder
+    "Realistic": None,  # Uses custom prompt in app.py
     "Manga (LineAni)": (
         "Black and white side view of a {breed} dog, accurate canine anatomy, "
         "single visible tail, one tail only, proper proportions, full body in frame, "
@@ -75,7 +83,9 @@ PROMPT_TEMPLATES = {
     ),
 }
 
-# Default negative prompt
+# ============================================================
+# NEGATIVE PROMPTS
+# ============================================================
 DEFAULT_NEGATIVE_PROMPT = (
     "blurry, low quality, distorted, extra limbs, extra legs, extra tails, "
     "duplicate tail, extra heads, wrong dog anatomy, elongated body, "
@@ -84,9 +94,8 @@ DEFAULT_NEGATIVE_PROMPT = (
     "jpeg artifacts, bad anatomy, text, logo, watermark"
 )
 
-# Style-specific negative prompts
 NEGATIVE_PROMPTS = {
-    "Realistic": None,  # Uses RealLifeDogSDXL's own negative prompt
+    "Realistic": None,  # Uses NEG from realistic_generator.py
     "Manga (LineAni)": (
         "extra tail, duplicate tail, second tail, tail duplication, tail artifact, "
         "blurry, low quality, distorted, extra limbs, extra legs, extra tails, "
@@ -101,14 +110,27 @@ NEGATIVE_PROMPTS = {
     "Pixel Art": DEFAULT_NEGATIVE_PROMPT + ", anti-aliasing, smooth gradients",
 }
 
-# Generation defaults
+# ============================================================
+# GENERATION DEFAULTS
+# ============================================================
+# Realistic defaults
+DEFAULT_REALISTIC_HEIGHT = 1024
+DEFAULT_REALISTIC_WIDTH = 1024
+DEFAULT_STEPS_BASE = 28
+DEFAULT_STEPS_REFINER = 20
+DEFAULT_REALISTIC_GUIDANCE = 5.5
+
+# Stylized defaults
 DEFAULT_HEIGHT = 720
 DEFAULT_WIDTH = 1080
 DEFAULT_STEPS = 50
 DEFAULT_GUIDANCE = 5.0
+
 DEFAULT_SEED = None  # Random
 
-# Dog breeds from the classifier model (id2breed.json)
+# ============================================================
+# DOG BREEDS (from classifier model id2breed.json)
+# ============================================================
 DOG_BREEDS = [
     "Affenpinscher",
     "Afghan Hound",
