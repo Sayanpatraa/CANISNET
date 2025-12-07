@@ -2308,11 +2308,12 @@ class RealLifeDogSDXL:
         # -------- LONG PROMPT CHUNKING --------
         prompt_embeds, negative_embeds = self.base.encode_prompt(
             prompt=prompt,
-            negative_prompt=NEG,
             device=self.device,
+            num_images_per_prompt=1,
             do_classifier_free_guidance=True,
-            max_length=200
+            negative_prompt=NEG,
         )
+
 
         # -------- BASE PASS --------
         base_out = self.base(
