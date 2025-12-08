@@ -18,9 +18,6 @@ from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classifi
 
 
 
-# ============================================================
-# 0. CONFIG
-# ============================================================
 
 class Config:
     # Paths (adapt these to your Kaggle layout)
@@ -65,9 +62,7 @@ def set_seed(seed: int = 42):
 set_seed(Config.SEED)
 
 
-# ============================================================
-# 1. DATASET
-# ============================================================
+
 
 class DogBreedDataset(Dataset):
     """
@@ -154,9 +149,7 @@ def create_dataloaders():
     return train_loader, val_loader, label2idx, idx2label
 
 
-# ============================================================
-# 2. MODEL — RESNET CLASSIFIER
-# ============================================================
+
 
 def create_resnet_classifier(num_classes: int = 120, pretrained: bool = True):
     model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT if pretrained else None)
@@ -189,9 +182,7 @@ def unfreeze_last_blocks(model: nn.Module, num_blocks: int = 1):
                 param.requires_grad = True
 
 
-# ============================================================
-# 3. TRAINING & EVAL
-# ============================================================
+
 
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()
@@ -309,9 +300,7 @@ def train_resnet_pipeline():
     print(f"Saved label mapping to {mapping_path}")
 
 
-# ============================================================
-# 4. INFERENCE: IMAGE to  BREED
-# ============================================================
+
 
 class DogBreedPredictor:
     def __init__(self, ckpt_path: str, mapping_csv: str):
@@ -342,9 +331,6 @@ class DogBreedPredictor:
         return list(zip(breeds, scores))
 
 
-# ============================================================
-# 5. STABLE DIFFUSION GENERATOR
-# ============================================================
 
 class DogImageGenerator:
     def __init__(self, model_name: str = Config.SD_MODEL_NAME):
@@ -379,9 +365,7 @@ class DogImageGenerator:
         return images
 
 
-# ============================================================
-# 6. CANISNET PIPELINE: IMAGE → PREDICT → GENERATE
-# ============================================================
+
 
 class CanisNet:
     """
@@ -422,9 +406,7 @@ class CanisNet:
         return topk, images
 
 
-# ============================================================
-# 7. STREAMLIT FRONTEND (WORKING ON)
-# ============================================================
+
 
 """
 Run with:
@@ -437,7 +419,7 @@ import streamlit as st
 
 def main_streamlit():
     st.set_page_config(page_title="CanisNet: Dog Breed Recognition & Image Generation", layout="wide")
-    st.title("🐶 CanisNet: Dog Breed Recognition & Image Generation")
+    st.title(" CanisNet: Dog Breed Recognition & Image Generation")
 
     ckpt_path = os.path.join(Config.CKPT_DIR, "resnet_stage2_best.pth")
     mapping_csv = os.path.join(Config.CKPT_DIR, "label_mapping.csv")
@@ -481,9 +463,6 @@ def main_streamlit():
                     st.image(img, use_column_width=True)
 
 
-# ============================================================
-# 8. CLI ENTRYPOINTS
-# ============================================================
 
 if __name__ == "__main__":
     import argparse
