@@ -6,7 +6,7 @@ Configuration for Dog Breed Classifier and Generator Streamlit App
 # CLASSIFIER SETTINGS
 # ============================================================
 CLASSIFIER_HF_REPO = "djhua0103/dog-breed-resnet50"
-CLASSIFIER_WEIGHT_FILE = "resnet50_dog_best_v2.pth"
+CLASSIFIER_WEIGHT_FILE = "resnet50_dog_best.pth"
 CLASSIFIER_LABEL_FILE = "id2breed.json"
 
 # ============================================================
