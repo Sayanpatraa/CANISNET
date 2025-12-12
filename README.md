@@ -1,2 +1,2 @@
 # Deep-Learning
-Group 6
+Diffusion Models
