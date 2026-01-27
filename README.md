@@ -1,2 +1,2 @@
 # CANISNET
-Diffusion Model(SDXL+Refiner , SDXL+LoRA) , Resnet50 implementation
+Diffusion Model(SDXL+Refiner(CLIP) , SDXL+LoRA) , Resnet50 implementation
